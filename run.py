@@ -13,6 +13,8 @@ import cairo
 import calendar
 import time
 from datetime import date
+import xlrd
+import xlwt
 
 ## data struct ###
 ## everyone have {"yb":time, "jqb":time, "name":"rname", yb_timelist[], jqb_timelist[]}
@@ -25,6 +27,7 @@ g_num_mon=3;
 g_start_mon=4;
 g_cur_date_int=0;
 g_cur_flag="jqb";
+g_date_name={};
 
 #def is_china_holiday(year, mon, day):
 #if rs.cell("H8").fill == rs.cell("H4").fill :
@@ -121,7 +124,7 @@ def lhs_check_one_can_work(idx, b_flag, date_int):
         #we make it mean
         if len(cur_one["jqbl"]) > 0:
                 last_jqb = cur_one["jqbl"][len(cur_one["jqbl"])-1];
-                if date_int - last_jqb < 10: #6time/3mon, so min is 10 day
+                if date_int - last_jqb < 9: #6time/3mon, so min is 10 day
                     return 0;
 
         if len(cur_one["ybl"]) > 0:
@@ -157,6 +160,12 @@ def lhs_check_work_and_set(idx, b_flag, date_int):
     if lhs_check_one_can_work(idx, b_flag, date_int) == 1:
         #g_list[g_name_list[idx]][b_flag] = g_list[g_name_list[idx]][b_flag] - 1
         g_list[g_name_list[idx]][b_flag+"l"].append(date_int)
+        if g_date_name.has_key(date_int):
+            name_list = g_date_name[date_int];
+        else:
+            name_list=[];
+        name_list.append(g_name_list[idx]);
+        g_date_name[date_int] = name_list;
         return 1;
     else:
         return 0;
@@ -174,7 +183,7 @@ def lhs_arange_one_day(date_int, is_hol):
     g_cur_date_int = date_int;
 
 
-    print "arrange day work"
+    print ("arrange day work", date.fromordinal(g_cur_date_int), jqb, yb);
     tmp_st_list=[];
     g_cur_flag = "jqb";
     for cur_st in g_list:
@@ -195,8 +204,8 @@ def lhs_arange_one_day(date_int, is_hol):
             jqb = jqb - 1;
     print ("remain ", g_cur_flag, jqb)
 
-    while jqb > 0:
-        jqb = 1;
+    #while jqb > 0:
+    #    jqb = 1;
 
     print "arrange night work"
     tmp_st_list=[];
@@ -241,8 +250,8 @@ def lhs_start_fill_blank(fname, sheet_name, holiday_pos, day_col, start_col, end
             print rb[cur_sheet]
             rs = rb[cur_sheet]
             holiday_fill = rs.cell(holiday_pos).fill;
-            hol_flag=0;
             for idx in range(start_row, end_row):
+                hol_flag=0;
                 cur_fill = rs.cell(row=idx, column=day_col).fill;
                 #print cur_fill;
                 if cur_fill == holiday_fill:
@@ -251,6 +260,78 @@ def lhs_start_fill_blank(fname, sheet_name, holiday_pos, day_col, start_col, end
                 ############ arange one day ############
                 lhs_arange_one_day(st_int+idx-start_row, hol_flag)
 
+def lhs_dump_one(one, sheet1, cur_row):
+    sheet1.write(cur_row, 1, one["name"])
+    cur_flag="jqb"
+    cur_row = cur_row + 1;
+    j = 1;
+    sheet1.write(cur_row, j, cur_flag);j = j+1;
+    if one.has_key(cur_flag):
+        sheet1.write(cur_row, j, one[cur_flag]);j = j+1;
+        sheet1.write(cur_row, j, lhs_get_remain_time(one, cur_flag));j = j+1;
+        for wdate in one[cur_flag+"l"]:
+            sheet1.write(cur_row, j, str(date.fromordinal(wdate)))
+            j = j+1;
+
+    cur_flag="yb"
+    cur_row = cur_row + 1;
+    j = 1;
+    sheet1.write(cur_row, j, cur_flag);j = j+1;
+    if one.has_key(cur_flag):
+        sheet1.write(cur_row, j, one[cur_flag]);j = j+1;
+        sheet1.write(cur_row, j, lhs_get_remain_time(one, cur_flag));j = j+1;
+        for wdate in one[cur_flag+"l"]:
+            sheet1.write(cur_row, j, str(date.fromordinal(wdate)))
+            j = j+1;
+
+
+
+
+    return cur_row+2;
+
+
+
+
+def lhs_write_out_result(fname, sheet_name, holiday_pos, day_col, start_col, end_col, start_row, end_row, st_int):
+    end_col = end_col+1;
+    end_row = end_row+1;
+
+    print fname
+    rb = load_workbook(fname);
+    print rb.get_sheet_names();
+
+    input_f=fname;
+    input_dir=input_f[:input_f.rfind('/')]
+    print input_dir
+
+    #excel sheet1
+    book = xlwt.Workbook(encoding="utf-8")
+    sheet1 = book.add_sheet("output")
+    srow = 0;
+    for idx in range(start_row, end_row):
+        cur_date = st_int+idx-start_row;
+        cur_row = srow + idx-start_row;
+
+        print date.fromordinal(cur_date)
+        sheet1.write(cur_row, 1, str(date.fromordinal(cur_date)));
+        if g_date_name.has_key(cur_date):
+            nlist = g_date_name[cur_date];
+
+            j=2;
+            for name in reversed(nlist):
+                sheet1.write(cur_row, j, name);
+                j = j+1;
+                if j == 4:#skip for yb
+                    j = j+1;
+
+    #dump less:
+    srow = end_row + 3;
+    cur_row = srow;
+    for name in g_name_list:
+        cur_one = g_list[name];
+        cur_row = lhs_dump_one(cur_one, sheet1, cur_row)
+
+    book.save(input_dir + "/gen_xls.xls")
 
 
 
@@ -278,4 +359,6 @@ print calendar.weekday(st_date.year, st_date.month, st_date.day)
 st_int=st_date.toordinal();
 print date.fromordinal(st_int+1)
 lhs_start_fill_blank("/home/manjusaka/all_codes/new_my_code/in_github/duan_paiban/input.xlsx", "Sheet1", "H4", 9, 10, 15, 3, 93, st_int);
+lhs_write_out_result("/home/manjusaka/all_codes/new_my_code/in_github/duan_paiban/input.xlsx", "Sheet1", "H4", 9, 10, 15, 3, 93, st_int);
+
 
